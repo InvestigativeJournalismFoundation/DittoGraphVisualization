@@ -29,8 +29,8 @@ function parseCSV(text) {
 // ── load ──────────────────────────────────────────────────────────────────────
 async function loadData() {
   const [edgesText, clustersText] = await Promise.all([
-    fetch("/edges.csv").then(r => r.text()),
-    fetch("/clusters.csv").then(r => r.text()),
+    fetch(import.meta.env.BASE_URL + "edges.csv").then(r => r.text()),
+    fetch(import.meta.env.BASE_URL + "clusters.csv").then(r => r.text()),
   ]);
   return {
     edges: parseCSV(edgesText),
