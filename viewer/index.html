@@ -200,11 +200,23 @@
       cursor: pointer;
     }
     button:hover { background: #363a4f; }
+
+    #dataset-select {
+      padding: 5px 10px;
+      background: #2a2d3a;
+      border: none;
+      border-radius: 5px;
+      color: #ccc;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #dataset-select:focus { outline: none; }
   </style>
 </head>
 <body>
   <header>
     <h1>Ditto Graph Viewer</h1>
+    <select id="dataset-select"></select>
     <span class="stats" id="header-stats">Loading…</span>
     <div class="controls">
       <button id="btn-zoom-in">+</button>

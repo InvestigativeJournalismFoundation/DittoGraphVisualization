@@ -27,10 +27,11 @@ function parseCSV(text) {
 }
 
 // ── load ──────────────────────────────────────────────────────────────────────
-async function loadData() {
+async function loadData(name) {
+  const base = import.meta.env.BASE_URL + `data/${name}/`;
   const [edgesText, clustersText] = await Promise.all([
-    fetch(import.meta.env.BASE_URL + "edges.csv").then(r => r.text()),
-    fetch(import.meta.env.BASE_URL + "clusters.csv").then(r => r.text()),
+    fetch(base + "edges.csv").then(r => r.text()),
+    fetch(base + "clusters.csv").then(r => r.text()),
   ]);
   return {
     edges: parseCSV(edgesText),
@@ -91,9 +92,7 @@ function setMsg(msg) {
 }
 
 function runLayout(graph) {
-  // Boost node sizes for degree to improve layout spread
   graph.nodes().forEach(n => {
-    const deg = graph.degree(n);
     graph.setNodeAttribute(n, "size", 5);
   });
 
@@ -191,8 +190,11 @@ function showNodeInfo(node, graph, sigmaInstance) {
 // ── search ────────────────────────────────────────────────────────────────────
 function setupSearch(sigmaInstance, graph) {
   const input = document.getElementById("search-input");
-  input.addEventListener("input", () => {
-    const q = input.value.trim().toLowerCase();
+  // Replace with a fresh clone to remove any prior event listeners
+  const fresh = input.cloneNode(true);
+  input.replaceWith(fresh);
+  fresh.addEventListener("input", () => {
+    const q = fresh.value.trim().toLowerCase();
     if (!q) {
       sigmaInstance.setSetting("nodeReducer", null);
       sigmaInstance.setSetting("edgeReducer", null);
@@ -209,16 +211,28 @@ function setupSearch(sigmaInstance, graph) {
   });
 }
 
-// ── main ──────────────────────────────────────────────────────────────────────
-async function main() {
+// ── init graph for a named dataset ───────────────────────────────────────────
+let currentRenderer = null;
+
+async function initGraph(name) {
+  document.getElementById("loading").style.display = "flex";
   setMsg("Loading data…");
-  const { edges, clusters } = await loadData();
+  document.getElementById("header-stats").textContent = "Loading…";
+  document.getElementById("legend-items").innerHTML = "";
+  document.getElementById("node-info").innerHTML = '<p class="placeholder">Click a node to inspect it.</p>';
+
+  if (currentRenderer) {
+    currentRenderer.kill();
+    currentRenderer = null;
+  }
+
+  const { edges, clusters } = await loadData(name);
 
   setMsg("Building graph…");
   const graph = buildGraph(edges, clusters);
 
   setMsg(`Running layout (${graph.order} nodes, ${graph.size} edges)…`);
-  await new Promise(r => setTimeout(r, 30)); // let the UI repaint
+  await new Promise(r => setTimeout(r, 30));
   runLayout(graph);
 
   setMsg("Rendering…");
@@ -228,7 +242,7 @@ async function main() {
     `${graph.order} organisations · ${graph.size} predicted matches · ${new Set(clusters.map(c => c.cluster_id)).size} clusters`;
 
   const container = document.getElementById("sigma-container");
-  const renderer = new Sigma(graph, container, {
+  currentRenderer = new Sigma(graph, container, {
     renderEdgeLabels: false,
     defaultEdgeColor: "#2a3040",
     labelDensity: 0.07,
@@ -241,42 +255,62 @@ async function main() {
 
   document.getElementById("loading").style.display = "none";
 
-  buildLegend(clusters, renderer, graph);
-  setupSearch(renderer, graph);
+  buildLegend(clusters, currentRenderer, graph);
+  setupSearch(currentRenderer, graph);
 
-  // Node click
-  renderer.on("clickNode", ({ node }) => {
-    showNodeInfo(node, graph, renderer);
+  currentRenderer.on("clickNode", ({ node }) => {
+    showNodeInfo(node, graph, currentRenderer);
 
     const neighbors = new Set(graph.neighbors(node));
-    renderer.setSetting("nodeReducer", (n, data) => {
+    currentRenderer.setSetting("nodeReducer", (n, data) => {
       if (n === node) return { ...data, highlighted: true };
       if (neighbors.has(n)) return { ...data, highlighted: true };
       return { ...data, color: "#1e2030", label: undefined };
     });
-    renderer.setSetting("edgeReducer", (edge, data) => {
+    currentRenderer.setSetting("edgeReducer", (edge, data) => {
       if (graph.hasExtremity(edge, node)) return data;
       return { ...data, color: "#1a1d27" };
     });
   });
 
-  // Click background → reset
-  renderer.on("clickStage", () => {
-    renderer.setSetting("nodeReducer", null);
-    renderer.setSetting("edgeReducer", null);
+  currentRenderer.on("clickStage", () => {
+    currentRenderer.setSetting("nodeReducer", null);
+    currentRenderer.setSetting("edgeReducer", null);
     document.getElementById("node-info").innerHTML = '<p class="placeholder">Click a node to inspect it.</p>';
   });
+}
 
-  // Zoom controls
+// ── main ──────────────────────────────────────────────────────────────────────
+async function main() {
+  // Zoom controls (wired once, work across dataset switches)
   document.getElementById("btn-zoom-in").addEventListener("click", () => {
-    renderer.getCamera().animatedZoom({ duration: 300 });
+    currentRenderer?.getCamera().animatedZoom({ duration: 300 });
   });
   document.getElementById("btn-zoom-out").addEventListener("click", () => {
-    renderer.getCamera().animatedUnzoom({ duration: 300 });
+    currentRenderer?.getCamera().animatedUnzoom({ duration: 300 });
   });
   document.getElementById("btn-reset").addEventListener("click", () => {
-    renderer.getCamera().animatedReset({ duration: 400 });
+    currentRenderer?.getCamera().animatedReset({ duration: 400 });
   });
+
+  // Load dataset index and populate dropdown
+  const datasets = await fetch(import.meta.env.BASE_URL + "data/index.json").then(r => r.json());
+  const select = document.getElementById("dataset-select");
+  for (const name of datasets) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  }
+
+  select.addEventListener("change", () => {
+    initGraph(select.value).catch(err => {
+      document.getElementById("loading-msg").textContent = `Error: ${err.message}`;
+      console.error(err);
+    });
+  });
+
+  await initGraph(datasets[0]);
 }
 
 main().catch(err => {
