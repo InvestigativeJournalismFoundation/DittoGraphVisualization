@@ -72,13 +72,18 @@ function buildGraph(edges, clusters) {
     });
   }
 
-  for (const { name1, name2, score } of edges) {
+  for (const { name1, name2, score, false_positive } of edges) {
+    if (name1 === name2) continue;
     const s = parseFloat(score);
+    const isFP = false_positive === "1";
     if (!graph.hasEdge(name1, name2)) {
       graph.addEdge(name1, name2, {
         weight: s,
+        falsePositive: isFP,
         size: Math.max(0.5, s * 3),
-        color: `rgba(120,140,180,${Math.max(0.15, s * 0.6)})`,
+        color: isFP
+          ? `rgba(220,50,50,${Math.max(0.4, s * 0.8)})`
+          : `rgba(120,140,180,${Math.max(0.15, s * 0.6)})`,
       });
     }
   }
@@ -159,19 +164,23 @@ function showNodeInfo(node, graph, sigmaInstance) {
   const neighbors = graph.neighbors(node).map(n => ({
     name: n,
     score: graph.getEdgeAttribute(graph.edge(node, n), "weight"),
+    falsePositive: graph.getEdgeAttribute(graph.edge(node, n), "falsePositive"),
   })).sort((a, b) => b.score - a.score);
+
+  const fpCount = neighbors.filter(n => n.falsePositive).length;
 
   const panel = document.getElementById("node-info");
   panel.innerHTML = `
     <h3>${node}</h3>
     <div class="info-row"><span class="info-label">Cluster</span><span class="info-value">${attrs.cluster}</span></div>
     <div class="info-row"><span class="info-label">Connections</span><span class="info-value">${neighbors.length}</span></div>
+    ${fpCount ? `<div class="info-row"><span class="info-label">False positives</span><span class="info-value" style="color:#e05555">${fpCount}</span></div>` : ""}
     <div class="neighbor-list">
       <h4>Connected orgs</h4>
       ${neighbors.map(nb => `
-        <div class="neighbor-item" data-node="${nb.name}">
+        <div class="neighbor-item" data-node="${nb.name}" style="${nb.falsePositive ? "border-left:2px solid #e05555;padding-left:6px" : ""}">
           <span>${nb.name}</span>
-          <span class="score-badge">${nb.score.toFixed(3)}</span>
+          <span class="score-badge" style="${nb.falsePositive ? "color:#e05555" : ""}">${nb.score.toFixed(3)}</span>
         </div>`).join("")}
     </div>`;
 
